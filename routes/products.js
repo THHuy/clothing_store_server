@@ -111,10 +111,6 @@ router.get('/', async (req, res) => {
     baseQuery += ` ORDER BY p.${validSortBy} ${validSortOrder}`;
     baseQuery += ` LIMIT ${parseInt(limit)} OFFSET ${offset}`;
 
-    console.log('Products query:', baseQuery);
-    console.log('Query params (WHERE only):', queryParams);
-    console.log('Params count:', queryParams.length);
-
     // Execute the query with only WHERE parameters
     const [products] = await promisePool.execute(baseQuery, queryParams);
 
@@ -428,44 +424,26 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get product images to delete files
-    const [product] = await promisePool.execute('SELECT images FROM products WHERE id = ?', [id]);
+    // Kiểm tra sản phẩm tồn tại
+    const [product] = await promisePool.execute('SELECT id FROM products WHERE id = ?', [id]);
     if (product.length === 0) {
       return res.status(404).json({ success: false, message: 'Không tìm thấy sản phẩm' });
     }
 
-    // Delete image files
-    if (product[0].images) {
-      const images = typeof product[0].images === 'string' 
-        ? JSON.parse(product[0].images) 
-        : product[0].images;
-      
-      images.forEach(imageUrl => {
-        if (imageUrl.startsWith('/uploads/')) {
-          const filePath = path.join(__dirname, '..', imageUrl);
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        }
-      });
-    }
-
-    // Delete variants first (foreign key constraint)
-    await promisePool.execute('DELETE FROM product_variants WHERE product_id = ?', [id]);
-    
-    // Delete product
-    await promisePool.execute('DELETE FROM products WHERE id = ?', [id]);
+    // Xóa mềm: cập nhật is_active = 0
+    await promisePool.execute('UPDATE products SET is_active = 0 WHERE id = ?', [id]);
 
     res.json({
       success: true,
-      message: 'Xóa sản phẩm thành công'
+      message: 'Đã chuyển sản phẩm sang trạng thái ẩn (xóa mềm)'
     });
 
   } catch (error) {
     console.error('Delete product error:', error);
     res.status(500).json({
       success: false,
-      message: 'Lỗi khi xóa sản phẩm'
+      message: 'Lỗi khi xóa sản phẩm',
+      error: error.message
     });
   }
 });
